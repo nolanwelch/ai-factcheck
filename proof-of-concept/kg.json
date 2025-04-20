@@ -3,7 +3,8 @@
         "entities": {
             "ent_01": "Barack Obama",
             "ent_02": "Michelle Obama",
-            "ent_03": "Presidency of the United States"
+            "ent_03": "Presidency of the United States",
+            "ent_04": "Tom Hanks"
         },
         "relations": {
             "rel_01": "spouseOf",
