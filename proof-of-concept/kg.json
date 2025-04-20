@@ -1,0 +1,28 @@
+{
+    "mapping": {
+        "entities": {
+            "ent_01": "Barack Obama",
+            "ent_02": "Michelle Obama",
+            "ent_03": "Presidency of the United States"
+        },
+        "relations": {
+            "rel_01": "spouseOf",
+            "rel_02": "formerOfficeHolder"
+        }
+    },
+    "graph": {
+        "ent_01": {
+            "rel_01": [
+                "ent_02"
+            ],
+            "rel_02": [
+                "ent_03"
+            ]
+        },
+        "ent_02": {
+            "rel_01": [
+                "ent_02"
+            ]
+        }
+    }
+}
