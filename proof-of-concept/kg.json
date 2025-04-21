@@ -4,11 +4,13 @@
             "ent_01": "Barack Obama",
             "ent_02": "Michelle Obama",
             "ent_03": "Presidency of the United States",
-            "ent_04": "Tom Hanks"
+            "ent_04": "Tom Hanks",
+            "ent_05": "Jimmy"
         },
         "relations": {
             "rel_01": "spouseOf",
-            "rel_02": "formerOfficeHolder"
+            "rel_02": "formerOfficeHolder",
+            "rel_03": "friendOf"
         }
     },
     "graph": {
@@ -23,9 +25,17 @@
         "ent_02": {
             "rel_01": [
                 "ent_01"
+            ],
+            "rel_03": [
+                "ent_05"
             ]
         },
         "ent_03": {},
-        "ent_04": {}
+        "ent_04": {},
+        "ent_05": {
+            "rel_03": [
+                "ent_02"
+            ]
+        }
     }
 }
