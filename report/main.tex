@@ -1,0 +1,119 @@
+% This must be in the first 5 lines to tell arXiv to use pdfLaTeX, which is strongly recommended.
+\pdfoutput=1
+% In particular, the hyperref package requires pdfLaTeX in order to break URLs across lines.
+
+\documentclass[11pt]{article}
+
+% Change "review" to "final" to generate the final (sometimes called camera-ready) version.
+% Change to "preprint" to generate a non-anonymous version with page numbers.
+% \usepackage[review]{acl}
+\usepackage{acl}
+
+% Standard package includes
+\usepackage{times}
+\usepackage{latexsym}
+
+% For proper rendering and hyphenation of words containing Latin characters (including in bib files)
+\usepackage[T1]{fontenc}
+% For Vietnamese characters
+% \usepackage[T5]{fontenc}
+% See https://www.latex-project.org/help/documentation/encguide.pdf for other character sets
+
+% This assumes your files are encoded as UTF8
+\usepackage[utf8]{inputenc}
+
+% This is not strictly necessary, and may be commented out,
+% but it will improve the layout of the manuscript,
+% and will typically save some space.
+\usepackage{microtype}
+
+% This is also not strictly necessary, and may be commented out.
+% However, it will improve the aesthetics of text in
+% the typewriter font.
+\usepackage{inconsolata}
+
+%Including images in your LaTeX document requires adding
+%additional package(s)
+\usepackage{graphicx}
+
+% If the title and author information does not fit in the area allocated, uncomment the following
+%
+%\setlength\titlebox{<dim>}
+%
+% and set <dim> to something 5cm or larger.
+
+\title{Automated Fact-Checking using Semantic Triplet Extraction and Knowledge Graphs}
+
+\author{
+  Rohan Kashyap \\
+  \texttt{rkashyap@unc.edu} \\\And
+  Nolan Welch \\
+  \texttt{nwelch@unc.edu} \\\And
+  Jiahao Tang \\
+  \texttt{jtang@unc.edu}
+}
+
+\begin{document}
+\maketitle
+\begin{abstract}
+[TODO]
+\end{abstract}
+
+\section{Introduction}
+Automated fact-checking (AFC) is a relatively recent development in the field of natural language processing (NLP), driven by the increasing volume of misinformation in digital media and the need for scalable verification methods. While early AFC systems primarily relied on rule-based approaches, recent advancements have seen the rise of purely neural architectures that aim to predict the truthfulness of claims based on large-scale language models. These systems have demonstrated promising results in benchmarks such as FEVER (Thorne et al., 2018)\cite{}, leveraging deep learning to generalize across diverse claim-evidence pairs.
+
+However, despite previous success, purely neural models present several challenges:
+\begin{itemize}
+    \item Lack of interpretability: In AFC, it is particularly important to have the ability to pinpoint the relevant source material(s), as reference, when a classification of truth/false is made. Neural networks often behave as “black boxes” and provide little to no support for such demands. 
+    \item Susceptibility to bias: due to the nature of neural models, they are prone to parroting arbitrary correlations present in the training data, some of which may be completely baseless. This property of neural models can lead to unreliable classifications of factual claims if tasked directly. 
+    \item Inability to handle knowledge updates: neural models rely on costly retraining to incorporate new information; this limits their utility in dynamic, real-time environments where facts are often times transient. One of the native alternatives would be to incorporate new information as part of the input through prompt engineering, but this method suffers even more from the inherent bias from the training data, as described above. 
+\end{itemize}
+
+Symbolic approaches, like knowledge graph (KG)-based reasoning, offer a more reliable and transparent alternative for fact-checking by grounding claims in structured knowledge bases like Wikidata. They allow for logic-based evaluation and break down complex claims into simpler, independently verifiable parts.
+This research proposes a hybrid approach that bridges neural and symbolic methods. The pipeline included several steps: creation of an local knowledge graph, relation extraction in the form of semantic triplets, claim evaluation against the knowledge graph, and response synthesis using a large language model(LLM); the end result was an automated pipeline that provides human-readable and verifiable (to the exact source) text regarding the factuality of any given claim. This novel method should solve the above potential problems by combining the scalability of neural systems and the readability and precision of symbolic reasoning. 
+
+\section{Related Works}
+It should be noted that Zhong et al. (2020)\cite{} achieved high accuracy on the FEVER benchmark by leveraging semantic role labeling (SRL) for claim extraction and evidence alignment. In contrast, the pipeline of this research applied SRL to claims only, as evidence is derived directly from the Wikidata knowledge base. This ensured a more scalable and reliable fact-checking pipeline by minimizing the reliance on external text corpora and human-curated evidence.
+
+\section{Method}
+The proposed pipeline could be decomposed into several overarching steps:
+
+\subsection{Building the Knowledge Graph}
+The knowledge base employed in this research was Wikidata. Wikidata is a large-scale digital knowledge base with over 115 million entries in the form of subject-predicate-object (SPO) semantic triples.
+
+To build a local knowledge graph, the first step was to obtain a set of Wikidata pages, in the form of their URLs, that are known to provide "evidence", or basis, for factual knowledge. This step was implemented through the use of the "datasets" library. In particular, the FEVER v1.0 Paper Development Dataset\cite{} was used, and the relevant URLs were extracted and parsed from the "evidence\_wiki\_url" column. A total of 1460 pages were selected for this purpose. 
+
+Then, using these URLs, perform API queries through the Wikidata API to obtain the page summary and title for each webpage. Each of the pages was further chunked into (title, sentence) pairs, refereed to below as "data chunks", where applicable; a total of 17167 data chunks were obtained. A naive preprocessing was performed to replace all third-person personal pronouns (he/she/they/them/it) found in all sentences with their corresponding title. It was assumed that the vast majority of these pronouns should be referring to the same entity as the article title, and thus it was theorized that this preprocessing would make deciphering complex relations easier down the pipeline.
+
+After that, feed each of the data chunks, along a carefully crafted prompt universal to all chunks, to ChatGPT, a LLM, to extract semantic triplets from them; the results were then aggregated locally to form the local knowledge graph. A significant benefit of this method was the triviality of updating the knowledge graph, since new knowledge can be appended to the existing graph by just marginally performing the said process over the new data. 
+
+The prompt was further specified as the following. For each data chunk $d$, pass the currently known set of entities $E$ and relative properties $P$ to the LLM; both $E$ and $P$ started as empty sets. Prompt the LLM to return $C$, a set of semantic triplets, defined as 3-tuples ($e_1, p, e_2$) s.t. $e_1, e_2 \in E$ and $p \in P$; the LLM is prompted to also attempt extracting triplets based on basic inference, and therefore several triplets could result from a single data chunk. Importantly, the instructions indicates that, when creating each element of the tuple in $c\in C$, if an entity or property referenced in $c$ is not present in $E$ or $P$, respectively, the LLM should define a new entity or property and indicate that it is new; this also eliminated the need of postprocessing over polymorphic representations of the elements (e.g. actedIn vs actsIn). When the LLM returns with $C$, for each $c$, append the new elements to their respective set, and append $c$ to the locally-constructed knowledge graph. This resulting knowledge graph was then used as a human-readable basis for all factuality determinations down the line. 
+
+In practice, 1000 data chunks were randomly sampled from all data chunks to both simplify the creation of a proof-of-concept and to save on ChatGPT API bills. 
+
+\subsection{Relation Extraction and Claim Evaluation}
+For a given input document $D$, within which there were a set of sentences $S$, each sentence $s\in S$ was parsed for semantic triplets using a method similar to the one defined above for building the knowledge graph. The LLM was similarly given the set of known elements $E$, known relative properties $P$, and the sentence $s$. The LLM was, instead, prompted to extract the set of semantic triplets $C$, as defined above, using exclusively the given elements in $E$ and $P$ that were constructed alongside the knowledge graph; the LLM would omit a triplet, otherwise present in the sentence, if its parsing would require elements not present in the given sets. This ensured that 1) polymorphic representations of the elements were automatically taken care of, and 2) triplets that would contain previously unknown entities or relations were completely disregarded. 
+
+The extracted triplets, with exactly matching entities and relations where applicable, were then compared logically to the local knowledge graph. The factuality was defined to be equivalent to the triplet being present exactly in the knowledge graph. This formulation, combined with 2) in the previous paragraph, was made in accordance to the open-world assumption (OWA), where claims not explicitly affirmed or negated by the knowledge graph are considered undefined, and therefore no determination of factuality would be provided.
+
+\subsection{Response synthesis}
+The fact-check results were then either 1) outputted with the relevant knowledge graph entries through a basic predetermined string (for simplicity and calculating F-score), or 2) fed into a LLM for a more fancy and human-readable result. 
+
+\section{Experiments and Analysis}
+[TODO: I assume we are feeding a dataset of facts and lies to the pipeline, and F-score over the factuality determination]
+
+\section{Conclusion}
+[TODO]
+
+\section*{Note on Diversity}
+[TODO]
+
+\section*{Note on Individual Contributions}
+[TODO]
+
+% Bibliography entries for the entire Anthology, followed by custom entries
+%\bibliography{anthology,custom}
+% Custom bibliography entries only
+\bibliography{custom}
+
+\end{document}
