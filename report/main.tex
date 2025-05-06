@@ -42,7 +42,7 @@
 %
 % and set <dim> to something 5cm or larger.
 
-\title{Automated Fact-Checking using Semantic Triplet Extraction and Knowledge Graphs}
+\title{Automated Fact-Checking using Semantic triple Extraction and Knowledge Graphs}
 
 \author{
   Rohan Kashyap \\
@@ -70,7 +70,7 @@ However, despite previous success, purely neural models present several challeng
 \end{itemize}
 
 Symbolic approaches, like knowledge graph (KG)-based reasoning, offer a more reliable and transparent alternative for fact-checking by grounding claims in structured knowledge bases like Wikidata. They allow for logic-based evaluation and break down complex claims into simpler, independently verifiable parts.
-This research proposes a hybrid approach that bridges neural and symbolic methods. The pipeline included several steps: creation of an local knowledge graph, relation extraction in the form of semantic triplets, claim evaluation against the knowledge graph, and response synthesis using a large language model(LLM); the end result was an automated pipeline that provides human-readable and verifiable (to the exact source) text regarding the factuality of any given claim. This novel method should solve the above potential problems by combining the scalability of neural systems and the readability and precision of symbolic reasoning. 
+This research proposes a hybrid approach that bridges neural and symbolic methods. The pipeline included several steps: creation of an local knowledge graph, relation extraction in the form of semantic triples, claim evaluation against the knowledge graph, and response synthesis using a large language model(LLM); the end result was an automated pipeline that provides human-readable and verifiable (to the exact source) text regarding the factuality of any given claim. This novel method should solve the above potential problems by combining the scalability of neural systems and the readability and precision of symbolic reasoning. 
 
 \section{Related Works}
 It should be noted that Zhong et al. (2020)\cite{zhong} achieved high accuracy on the FEVER benchmark by leveraging semantic role labeling (SRL) for claim extraction and evidence alignment. In contrast, the pipeline of this research applied SRL to claims only, as evidence is derived directly from the Wikidata knowledge base. This ensured a more scalable and reliable fact-checking pipeline by minimizing the reliance on external text corpora and human-curated evidence.
@@ -78,94 +78,66 @@ It should be noted that Zhong et al. (2020)\cite{zhong} achieved high accuracy o
 \section{Method}
 The proposed pipeline could be decomposed into several overarching steps:
 
-\subsection{Building the Knowledge Graph}
-The knowledge base employed in this research was Wikidata. Wikidata is a large-scale digital knowledge base with over 115 million entries in the form of subject-predicate-object (SPO) semantic triples.
+\subsection{Building the Knowledge Graph: Naive Triple Extraction}
+Our naive approach to knowledge graph contruction consisted of splitting each passage into sentence-sized chunks and passing each chunk to the 2a-GPT-4o-mini instance in turn. We prompted the model to extract all semantic triples (entityA, relationship, entityB) from the input text using a few-shot chain-of-thought (CoT) prompting method.
 
-To build a local knowledge graph, the first step was to obtain a set of Wikidata pages, in the form of their URLs, that are known to provide "evidence", or basis, for factual knowledge. This step was implemented through the use of the "datasets" library. In particular, the FEVER v1.0 Paper Development Dataset\cite{fever} was used, and the relevant URLs were extracted and parsed from the "evidence\_wiki\_url" column. A total of 1460 pages were selected for this purpose. 
+We decided on a few-shot CoT prompting strategy based on a qualitative exploratory analysis comparing zero-shot, one-shot, and few-shot promting with and without CoT. We found that few-shot CoT prompting extracted the most semantic triples from a passage and performed the most consistently compared to other prompting strategies. We also used a model temperature of $0$ to further minimize variation when sampling.
 
-Then, using these URLs, perform API queries through the Wikidata API to obtain the page summary and title for each webpage. Each of the pages was further chunked into (title, sentence) pairs, refereed to below as "data chunks", where applicable; a total of 17186 data chunks were obtained. A naive preprocessing was performed to replace all third-person personal pronouns (he/she/they/them/it) found in all sentences with their corresponding title. It was assumed that the vast majority of these pronouns should be referring to the same entity as the article title, and thus it was theorized that this preprocessing would make deciphering complex relations easier down the pipeline.
+\subsection{Building the Knowledge Graph: Semantic Triplestore}
+In an effort to formulate a more scalable approach to fact-checking, we considered the FEVER v1.0 Paper Development Dataset\cite{fever}. We built a highly compact, local knowledge base as follows:
 
-After that, feed each of the data chunks, along a carefully crafted prompt universal to all chunks, to ChatGPT, a LLM, to extract semantic triplets from them; the results were then aggregated locally to form the local knowledge graph. A significant benefit of this method was the triviality of updating the knowledge graph, since new knowledge can be appended to the existing graph by just marginally performing the said process over the new data. 
+We began by downloading all Wikipedia articles referenced in the FEVER dataset. The FEVER dataset contains a set of Wikipedia pages in the form of their URLs in its 'evidence\_wiki\_url' column. These URLs provide the factual basis for which their respective claims are evaluated on. A total of 1460 pages were selected for this purpose.
 
-The prompt was further specified as the following. For each data chunk $d$, pass the currently known set of entities $E$ and relative properties $P$ to the LLM; both $E$ and $P$ started as empty sets. Prompt the LLM to return $C$, a set of semantic triplets, defined as 3-tuples ($e_1, p, e_2$) s.t. $e_1, e_2 \in E$ and $p \in P$; the LLM is prompted to also attempt extracting triplets based on basic inference, and therefore several triplets could result from a single data chunk. Importantly, the instructions indicates that, when creating each element of the tuple in $c\in C$, if an entity or property referenced in $c$ is not present in $E$ or $P$, respectively, the LLM should define a new entity or property and indicate that it is new; this also eliminated the need of postprocessing over polymorphic representations of the elements (e.g. actedIn vs actsIn). When the LLM returns with $C$, for each $c$, append the new elements to their respective set, and append $c$ to the locally-constructed knowledge graph. This resulting knowledge graph was then used as a human-readable basis for all factuality determinations down the line. 
+We split the Wikipedia articles into sentence-sized chunks with the title of the article prepended to the sentence; a total of 17186 data chunks were obtained. A naive preprocessing was performed to replace all third-person personal pronouns (he/she/they/them/it) found in all sentences with the corresponding article title. It was assumed that the vast majority of these pronouns should be referring to the same entity as the article title, and thus it was theorized that this preprocessing would make deciphering complex relations easier down the pipeline.
 
-In practice, 2000 data chunks were randomly sampled from all data chunks to both simplify the creation of a proof-of-concept and to save on ChatGPT API bills. 
+We then followed a similar process to the above naive triple extraction to generate a set of all claims made within each chunk. A significant benefit of this method is the triviality of updating the knowledge graph, since new knowledge can be appended to the existing graph after some light processing.
 
-\subsection{Relation Extraction and Claim Evaluation}
-For a given input document $D$, within which there were a set of sentences $S$, each sentence $s\in S$ was parsed for semantic triplets using a method similar to the one defined above for building the knowledge graph. The LLM was similarly given the set of known elements $E$, known relative properties $P$, and the sentence $s$. The LLM was, instead, prompted to extract the set of semantic triplets $C$, as defined above, using exclusively the given elements in $E$ and $P$ that were constructed alongside the knowledge graph; the LLM would omit a triplet, otherwise present in the sentence, if its parsing would require elements not present in the given sets. This ensured that 1) polymorphic representations of the elements were automatically taken care of, and 2) triplets that would contain previously unknown entities or relations were completely disregarded. 
+Then, for each extracted semantic triple, we performed a grounding process. We attempted to match the two entities and relationship involved in the triple on a lexical (text-match), and then semantic (embedding similarity), basis to pre-existing items in our ontology (the set of existing entities and relationships in our knowledge base). If no lexical match or semantic match with cosine similarity greater than 0.9 was found, we declared a new item in our ontology. We did so by calculating a text embedding for the item using the all-MiniLM-L6-v2 model from HuggingFace, producing 384 byte embeddings and storing them within a chromadb local vector database. In this way, we eliminated the need of postprocessing over polymorphic representations of the elements by avoiding unnecessary duplication of semantically identical but differently-phrased relationships and entities (e.g. actedIn vs actsIn).
 
-The extracted triplets, with exactly matching entities and relations where applicable, were then compared logically to the local knowledge graph. The factuality was defined to be equivalent to the triplet being present exactly in the knowledge graph. This formulation, combined with 2) in the previous paragraph, was made in accordance to the open-world assumption (OWA), where claims not explicitly affirmed or negated by the knowledge graph are considered undefined, and therefore no determination of factuality would be provided.
+In addition to generating embeddings for each of the three items that comprise a semantic triple, we concatenated the embeddings of entityA, relationship, and entityB to form a 'fact embedding' of dimensionality 1152 (=384*3).
 
-\subsection{Response synthesis}
-The fact-check results were then either 1) outputted with the relevant knowledge graph entries through a basic predetermined string (for simplicity and evaluation), or 2) fed into a LLM for a more fancy and human-readable result. 
+\subsection{Factual Recall and Claim Evaluation}
+We underwent a similar process to knowledge graph construction, extracting semantic triples via LLM and grounding said triples in our ontology. Then, we created 'claim embeddings' for each of these semantic triples via the same concatenation method used for the 'fact embeddings' above. We searched for the top $k=3$ matches in our knowledge base (cosine similarity), treating those as relevant facts for the purpose of our fact check. Finally, we passed the relevant facts and the claim to an 'arbiter' LLM (GPT-4o-mini), which was prompted to determine the validity, falsehood, or indeterminacy of the claim solely based on the relevant facts, employing a zero-shot CoT method. The arbiter's decision was then returned as the final classification in our pipeline.
+
+This classification was made in accordance to the open-world assumption (OWA), where claims not explicitly affirmed or negated by the knowledge graph are considered undefined, and therefore no determination of factuality would be provided.
+
+\subsection{Response Synthesis}
+The fact-check results were then either 1) outputted with the relevant knowledge graph entries through a basic predetermined string (for simplicity and evaluation), or 2) fed into a LLM for a more sophisticated and human-readable result. We envision this response synthesis step as being crucial for fact-checking in socially-aligned LLMs, as it provides a more interactive user experience than simple affirmation or denial.
 
 \section{Experiments and Analysis}
-The experimental setup of this research focused on the different ways the aforementioned prompt to the LLM semantic triplet extractor could be formatted, and how this difference affects the overall performance of the pipeline. Specifically, the pipeline's ability to correctly predict the factuality of claims is evaluated across three types of prompts: zero-shot(0s), one-shot(1s), and one-shot with chain of thought injection(1sCoT). 2000 labeled claims were randomly sampled from the FEVER v1.0 paper\_test dataset to be used as the test dataset; they each have a label of either "SUPPORTS", "REFUTES", or "NOT ENOUGH INFO"(NEI). These claims were fed into the pipeline under the above prompting setups, and their performances were shown in Table \ref{tab:result}.
+The experimental setup of this research focused on the different ways the aforementioned prompt to the LLM semantic triple extractor could be formatted, and how this difference affects the overall performance of the pipeline.
+
+1000 passages and questions were randomly sampled from Google's BoolQ dataset (Clark et. al., 2019) to be used as the test dataset. Our process consisted of first extracting semantic triples from the passages using multi-shot chain-of-thought (CoT) prompting with the GPT-4o-mini model to form our ad hoc knowledge graph. We then passed the questions and the lexicalized knowledge graph to a GPT-4o-mini instance with zero-shot CoT prompting. This second model was prompted to determine whether the given question was true or false, based only on the provided knowledge graph.
+
+With this method, we achieved an F-1 score of 0.86 on the binary classification task. See Table \ref{tab:result} for more results.
 
 \begin{table}[ht]
     \centering
     \caption{Evaluation results}
     
-    \caption*{Performance of Zero-shot Prompting}
-    \begin{tabular}{c|c|c|c|c}
+    \caption*{Classifying Correct Answer in True/False Questions}
+    \begin{tabular*}{\columnwidth}{c|c|c|c|c}
         \hline
          & precision & recall & f1-score & support \\
         \hline
-        NEI & 0.25 & 0.97 & 0.40 & 192 \\
-        REFUTES & 0.84 & 0.11 & 0.19 & 294 \\
-        SUPPORTS & 1.00 & 0.01 & 0.02 & 302 \\
+        False & 0.79 & 0.89 & 0.84 & 404 \\
+        True & 0.92 & 0.84 & 0.88 & 596 \\
          &  &  &  & \\
-        accuracy &  &  & 0.28 & 788 \\
-        macro avg & 0.70 & 0.36 & 0.20 & 788 \\
-        weighted avg & 0.76 & 0.28 & 0.17 & 788 \\
+        accuracy &  &  & 0.86 & 1000 \\
+        macro avg & 0.86 & 0.87 & 0.86 & 1000 \\
+        weighted avg & 0.87 & 0.86 & 0.86 & 1000 \\
         \hline
-    \end{tabular}
-    \bigskip
-    
-    % [TODO: INPUT CORRECT DATA]
-    \caption*{Performance of One-shot Prompting}
-    \begin{tabular}{c|c|c|c|c}
-        \hline
-         & precision & recall & f1-score & support \\
-        \hline
-        NEI & 0.25 & 0.97 & 0.40 & 192 \\
-        REFUTES & 0.84 & 0.11 & 0.19 & 294 \\
-        SUPPORTS & 1.00 & 0.01 & 0.02 & 302 \\
-         &  &  &  & \\
-        accuracy &  &  & 0.28 & 788 \\
-        macro avg & 0.70 & 0.36 & 0.20 & 788 \\
-        weighted avg & 0.76 & 0.28 & 0.17 & 788 \\
-        \hline
-    \end{tabular}
-    \bigskip
-
-    % [TODO: INPUT CORRECT DATA]
-    \caption*{Performance of One-shot Prompting with CoT}
-    \begin{tabular}{c|c|c|c|c}
-        \hline
-         & precision & recall & f1-score & support \\
-        \hline
-        NEI & 0.25 & 0.97 & 0.40 & 192 \\
-        REFUTES & 0.84 & 0.11 & 0.19 & 294 \\
-        SUPPORTS & 1.00 & 0.01 & 0.02 & 302 \\
-         &  &  &  & \\
-        accuracy &  &  & 0.28 & 788 \\
-        macro avg & 0.70 & 0.36 & 0.20 & 788 \\
-        weighted avg & 0.76 & 0.28 & 0.17 & 788 \\
-        \hline
-    \end{tabular}
+    \end{tabular*}
     
     \label{tab:result}
 \end{table}
 
-[TODO: which is better, 0s, 1s, 1sCoT?]
-
-It is important to note that the results in Table \ref{tab:result} were based on a knowledge base of the size 2000. Ideally the knowledge base(graph) should be based on the entire 17000+ data chunks, if not the entire Wikidata, but the associated API bills to do so was deemed too expensive for this research. As such, it was determined that keeping the size at 2000 was a valid tradeoff between overall cost and still able to demonstrate the validity and effectiveness of the pipeline. 
+It is important to note that the results in Table \ref{tab:result} were based on a miniature knowledge base constructed at test time from each passage. Ideally, the knowledge base should be based on a significantly larger dataset and not rely on the input passing in an input text. However, for our purposes, the associated API costs to do so was deemed too expensive for this research. As such, it was determined that performing our experimentation in this way was a necessary tradeoff between overall cost and still able to demonstrate the validity and effectiveness of the pipeline for the purposes of this paper. 
 
 \section{Conclusion}
-In this research, an automated pipeline for fact-checking any given text was developed and evaluated across three setups. Factual information was extracted from selective websites from Wikidata, formatted into a local knowledge graph, and used to compare and validate the factuality of other given claims. The evaluations, as shown in Table \ref{tab:result}, suggested that the pipeline was indeed able to characterize the factuality of given claims ("to fact-check") based on the knowledge graph, and did so with quality. The results also showed that, despite the use of LLM, one of the the very thing to be fact-checked against, as a semantic triplet extractor, the pipeline was able to correctly combine the adaptability of LLM and the exact logical representation of the knowledge graph to produce results with high quality. 
+In this research, an automated pipeline for fact-checking any given text was developed and evaluated across three setups. Factual information was extracted from unstructured text data, formatted into a local knowledge graph, and used to compare and validate the factuality of other given claims. The evaluations, as shown in Table \ref{tab:result}, suggested that the pipeline was indeed able to characterize the factuality of given claims based on the knowledge graph, and did so with quality. The results also demonstrated that, despite the use of stochastic models like LLMs (which lack \emph{a priori} guarantees on correctness, relying instead on statistical patterns to elicit desired behavior), the pipeline was able to adeptly combine the adaptability of LLMs and the price logical representation of the knowledge graph to produce high-quality results. 
 
-Because of the evident quality of the result and the expandability of the knowledge graph, it is likely that the pipeline can be deployed for practical uses after further expanding the knowledge graph to include more entries from, for example, the entire Wikidata. This pipeline should server as a great tool in assistance to fact-checking in general. 
+Because of the evident quality of the result and the expandability of the knowledge graph, it is likely that the pipeline can be deployed for practical uses after further expanding the knowledge graph to include more entries from, for example, Wikipedia. This pipeline should server as a great tool in assistance to fact-checking in general. 
 
 \section*{Note on Diversity}
 The diversity in our group stems both from our ethnic/cultural identities and our fields of study. Our group members come from India, China, and the United States. We also specialize in Physics, Hispanic Linguistics, and Business Administration in addition to our Computer Science major. Thanks to these two factors, we were able to bring three different perspectives to our project. This in turn allowed us to create a cleaner and more efficient codebase and write a high-quality, in-depth report.
