@@ -73,7 +73,7 @@ Symbolic approaches, like knowledge graph (KG)-based reasoning, offer a more rel
 This research proposes a hybrid approach that bridges neural and symbolic methods. The pipeline included several steps: creation of an local knowledge graph, relation extraction in the form of semantic triples, claim evaluation against the knowledge graph, and response synthesis using a large language model(LLM); the end result was an automated pipeline that provides human-readable and verifiable (to the exact source) text regarding the factuality of any given claim. This novel method should solve the above potential problems by combining the scalability of neural systems and the readability and precision of symbolic reasoning. 
 
 \section{Related Works}
-It should be noted that Zhong et al. (2020)\cite{zhong} achieved high accuracy on the FEVER benchmark by leveraging semantic role labeling (SRL) for claim extraction and evidence alignment. In contrast, the pipeline of this research applied SRL to claims only, as evidence is derived directly from the Wikidata knowledge base. This ensured a more scalable and reliable fact-checking pipeline by minimizing the reliance on external text corpora and human-curated evidence.
+It should be noted that previous research \cite{zhong} achieved high accuracy on the FEVER benchmark by leveraging semantic role labeling (SRL) for claim extraction and evidence alignment. In contrast, the pipeline of this research applied SRL to claims only, as evidence is derived directly from the Wikidata knowledge base. This ensured a more scalable and reliable fact-checking pipeline by minimizing the reliance on external text corpora and human-curated evidence.
 
 \section{Method}
 The proposed pipeline could be decomposed into several overarching steps:
@@ -107,7 +107,7 @@ The fact-check results were then either 1) outputted with the relevant knowledge
 \section{Experiments and Analysis}
 The experimental setup of this research focused on the different ways the aforementioned prompt to the LLM semantic triple extractor could be formatted, and how this difference affects the overall performance of the pipeline.
 
-1000 passages and questions were randomly sampled from Google's BoolQ dataset (Clark et. al., 2019) to be used as the test dataset. Our process consisted of first extracting semantic triples from the passages using multi-shot chain-of-thought (CoT) prompting with the GPT-4o-mini model to form our ad hoc knowledge graph. We then passed the questions and the lexicalized knowledge graph to a GPT-4o-mini instance with zero-shot CoT prompting. This second model was prompted to determine whether the given question was true or false, based only on the provided knowledge graph.
+1000 passages and questions were randomly sampled from Google's BoolQ dataset \citep{clark2019boolq} to be used as the test dataset. Our process consisted of first extracting semantic triples from the passages using multi-shot chain-of-thought (CoT) prompting with the GPT-4o-mini model to form our ad hoc knowledge graph. We then passed the questions and the lexicalized knowledge graph to a GPT-4o-mini instance with zero-shot CoT prompting. This second model was prompted to determine whether the given question was true or false, based only on the provided knowledge graph.
 
 With this method, we achieved an F-1 score of 0.86 on the binary classification task. See Table \ref{tab:result} for more results.
 
